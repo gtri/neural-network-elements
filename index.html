@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Multi-Layer Interactive Neural Network</title>
+
+    <!-- Add MathJax Configuration -->
+    <script>
+        MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                packages: ['base', 'ams']
+            },
+            svg: {
+                fontCache: 'global'
+            }
+        };
+    </script>
+
+    <!-- Load MathJax -->
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+
+    <!-- Add Three.js -->
+    <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- Add Numeric.js for eigenvalue computation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/numeric/1.2.6/numeric.min.js"></script>
+
+    <!-- External CSS -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="controls">
+            <div class="header">
+                <h1>Multi-Layer Neural Network</h1>
+                <p>Adjust architecture, weights, biases, and training</p>
+            </div>
+            <div class="group">
+                <h3>Network Architecture</h3>
+                <div class="row">
+                    <label>Input Size:</label>
+                    <div class="info" data-tip="Number of input neurons">i</div>
+                    <input type="number" id="input-size" value="2" min="1" max="10">
+                </div>
+                <div class="row">
+                    <label>Hidden Layers:</label>
+                    <div class="info" data-tip="Comma-separated layer sizes (e.g., 4,6,3)">i</div>
+                    <input type="text" id="hidden-layers" value="4,3" placeholder="4,6,3">
+                </div>
+                <div class="row">
+                    <label>Output Size:</label>
+                    <div class="info" data-tip="Number of output neurons">i</div>
+                    <input type="number" id="output-size" value="1" min="1" max="10">
+                </div>
+                <button onclick="createNetwork()">Rebuild Network</button>
+            </div>
+            <div class="group">
+                <h3>Input Values</h3>
+                <div id="input-controls"></div>
+                <button onclick="forward()">Forward Pass</button>
+            </div>
+            <div class="group">
+                <h3>Weight & Bias Controls</h3>
+                <div class="weights" id="weight-controls"></div>
+                <button onclick="randomize()">Randomize</button>
+                <button onclick="zero()">Zero</button>
+                <button onclick="reset()" class="btn-reset">Reset</button>
+            </div>
+            <div class="group">
+                <h3>Training</h3>
+                <div class="row">
+                    <label>Learning Rate:</label>
+                    <div class="info" data-tip="How fast the network learns">i</div>
+                    <input type="number" id="learning-rate" value="0.01" step="0.001" min="0.001" max="1">
+                </div>
+                <div class="row">
+                    <label>Training Speed:</label>
+                    <div class="info" data-tip="Time between training steps when holding button (milliseconds)">i</div>
+                    <input type="number" id="training-interval" value="1000" step="100" min="100" max="5000" onchange="updateTrainingInterval(this.value)">
+                </div>
+                <div style="border-top: 1px solid #e0e0e0; margin: 10px 0; padding-top: 10px;">
+                    <div class="row">
+                        <label>Target Function:</label>
+                        <div class="info" data-tip="Use x and y variables, Math functions supported">i</div>
+                        <input type="text" id="target-function" value="x*x + y*y - 1.5" style="width: 200px;">
+                        <button onclick="visualizeTargetFunction()" style="font-size: 12px; padding: 4px 8px; margin-left: 5px;">Visualize</button>
+                    </div>
+                    <div class="row">
+                        <label>Sample Points:</label>
+                        <div class="info" data-tip="Number of random points to generate">i</div>
+                        <input type="number" id="sample-points" value="50" min="1" max="1000">
+                    </div>
+                    <button onclick="generateDataPoints()">Generate Training Data</button>
+                    <button onclick="importTrainingData()" style="margin-left: 5px;">Import Training Data</button>
+                </div>
+                <div class="training" id="training-data"></div>
+                <div style="display: flex; gap: 5px;">
+                    <button onclick="addData()">Add Data Point</button>
+                    <button onclick="clearData()" class="btn-reset">Clear Data</button>
+                </div>
+                <button onmousedown="handleTrainButtonDown()" onmouseup="handleTrainButtonUp()" onmouseleave="handleTrainButtonUp()" class="btn-train">Train 1 Step</button>
+                <button onclick="trainBatch()" class="btn-train">Train 100 Steps</button>
+                <div style="display: flex; gap: 5px; margin-top: 5px;">
+                    <button onclick="playTraining()" id="play-btn" class="btn-train" style="background-color: #27ae60;">▶ Play</button>
+                    <button onclick="pauseTraining()" id="pause-btn" class="btn-train" style="background-color: #e74c3c; display: none;">⏸ Pause</button>
+                </div>
+            </div>
+            <div class="group">
+                <h3>Save/Load</h3>
+                <button onclick="saveNet()">Save Network</button>
+                <input type="file" id="load-file" accept=".json" style="display:none" onchange="loadNet(event)">
+                <button onclick="document.getElementById('load-file').click()">Load Network</button>
+            </div>
+            <div class="group">
+                <h3>3D Plot Settings</h3>
+                <div class="row">
+                    <label>Normal Tolerance:</label>
+                    <div class="info" data-tip="Controls color grouping in curved regions (0.01-0.2)" style="width: 16px; height: 16px; flex: none;">i</div>
+                    <div class="slider-container">
+                        <input type="range" min="0.01" max="0.2" step="0.01" value="0.1"
+                               oninput="updateNormalTolerance(this.value)" id="normal-tolerance-slider">
+                        <input type="number" min="0.01" max="0.2" step="0.01" value="0.1"
+                               onchange="updateNormalToleranceNum(this.value)" id="normal-tolerance-num">
+                    </div>
+                </div>
+                <div class="row">
+                    <label>Surface Detail:</label>
+                    <div class="info" data-tip="Controls mesh resolution (50-200)" style="width: 16px; height: 16px; flex: none;">i</div>
+                    <div class="slider-container">
+                        <input type="range" min="50" max="200" step="5" value="120"
+                               oninput="updateTessellation(this.value)" id="tessellation-slider">
+                        <input type="number" min="50" max="200" step="5" value="120"
+                               onchange="updateTessellationNum(this.value)" id="tessellation-num">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="network">
+            <canvas id="canvas" width="800" height="600"></canvas>
+            <div class="info-panel">
+                <div id="output">Click "Forward Pass" to see network output</div>
+                <div id="error" style="color:#e74c3c;font-weight:bold;text-align:center;margin:8px 0"></div>
+                <div class="binary-display">
+                    <div class="binary-vectors">
+                        <h3 style="color:#2c3e50;margin-bottom:10px;font-size:14px">Binary State Vectors</h3>
+                        <div id="binary-states"></div>
+                    </div>
+                    <div class="plot-container">
+                        <div class="plot-switch">
+                            <label>Plot Type:</label>
+                            <div class="switch-toggle" id="plot-type-switch" onclick="togglePlotType()">
+                            </div>
+                            <span id="plot-type-label">2D Plot</span>
+                        </div>
+                        <div id="plot-container">
+                            <div class="plot-controls">
+                            </div>
+                            <div class="plot-layout side-by-side">
+                                <div class="plot-window">
+                                    <div class="window-header">Polyhedral Decomposition</div>
+                                    <canvas id="plot-canvas" width="300" height="300"></canvas>
+                                    <div class="window-controls">
+                                        <label>Resolution:</label>
+                                        <input type="range" min="50" max="99" value="70"
+                                            oninput="document.getElementById('resolution-value').textContent=this.value;updatePlot()"
+                                            id="plot-resolution">
+                                        <span id="resolution-value">70</span>
+                                        <div style="margin-left: 15px; display: flex; align-items: center; gap: 5px;">
+                                            <button onclick="DecisionBoundary.resetView()" style="font-size: 12px; padding: 4px 8px; margin-left: 5px;">Reset View</button>
+                                        </div>
+                                    </div>
+                                    <div class="plot-legend">Colors show binary activation patterns. Drag to pan, scroll to zoom.</div>
+                                    <div id="neuron-buttons-container" class="neuron-buttons">
+                                        <!-- Neuron buttons will be dynamically added here -->
+                                    </div>
+                                </div>
+                                <div class="plot-window">
+                                    <div class="window-header">Dual Graph</div>
+                                    <canvas id="dual-graph-canvas" width="300" height="300"></canvas>
+                                    <div class="plot-legend">Graph of adjacent regions</div>
+                                    <div style="margin-top: 10px; text-align: center; display: flex; align-items: center; justify-content: center; gap: 5px;">
+                                        <select id="export-format" style="font-size: 12px; padding: 2px 4px;">
+                                            <option value="json">JSON</option>
+                                            <option value="python">Python</option>
+                                        </select>
+                                        <button onclick="exportDualGraph()" style="font-size: 12px; padding: 4px 8px;">Export Dual Graph</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="3d-plot-container" class="vis3d-container">
+                            <canvas id="vis3d-canvas"></canvas>
+                        </div>
+                        <div class="loss-graph-container">
+                            <div class="window-header">Training Loss History</div>
+                            <canvas id="loss-graph-canvas" width="620" height="250"></canvas>
+                            <div class="loss-controls">
+                                <button onclick="clearLossHistory()" class="btn-reset" style="font-size: 11px; padding: 4px 8px;">Clear History</button>
+                                <div class="loss-stats" id="loss-stats"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- External JavaScript Modules -->
+    <script src="js/eigenvalue-computation.js"></script>
+    <script src="js/network.js"></script>
+    <script src="js/network-visualization.js"></script>
+    <script src="js/decision-boundary.js"></script>
+    <script src="js/dual-graph.js"></script>
+    <script src="js/binary-display.js"></script>
+    <script src="js/visualization-3d.js"></script>
+    <script src="js/training.js"></script>
+    <script src="js/file-manager.js"></script>
+    <script src="js/plot-manager.js"></script>
+    <script src="js/loss-graph.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
